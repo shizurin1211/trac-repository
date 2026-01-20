@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="es" class="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetworkScope - Monitor MAN</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e'
+                        },
+                        dark: {
+                            100: '#1e293b',
+                            200: '#0f172a',
+                            300: '#020617'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+
+        .accordion-toggle:checked~.accordion-content {
+            max-height: 1000px;
+        }
+
+        .accordion-toggle:checked+label .accordion-arrow {
+            transform: rotate(180deg);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        .online {
+            background-color: #10b981;
+        }
+
+        .offline {
+            background-color: #ef4444;
+        }
+
+        .warning {
+            background-color: #f59e0b;
+        }
+
+        .node-row {
+            background-color: #f8fafc;
+        }
+
+        .dark .node-row {
+            background-color: #1e293b;
+        }
+
+        .device-row:hover {
+            background-color: rgba(14, 165, 233, 0.05);
+        }
+
+        .dark .device-row:hover {
+            background-color: rgba(14, 165, 233, 0.1);
+        }
+
+        .search-focus:focus {
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+        }
+
+
+        @keyframes pulse-online {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        @keyframes shake-offline {
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            25% {
+                transform: translateX(-2px);
+            }
+
+            75% {
+                transform: translateX(2px);
+            }
+        }
+
+        .device-updating {
+            animation: pulse-online 1s ease-in-out infinite;
+        }
+
+        .device-offline-update {
+            animation: shake-offline 0.5s ease-in-out;
+        }
+
+
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content {
+            animation: modalFadeIn 0.3s ease-out;
+        }
+
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+
+        select:focus {
+            outline: none;
+            ring: 2px;
+            ring-color: #0ea5e9;
+        }
+
+        .input-error {
+            border-color: #ef4444 !important;
+        }
+
+        .input-error:focus {
+            ring-color: #ef4444 !important;
+        }
+
+        
+    </style>
+
+
+</head>
+
+<body class="bg-gray-50 dark:bg-dark-300 transition-colors duration-300 min-h-screen">
+
+    <nav class="bg-white dark:bg-dark-200 border-b border-gray-200 dark:border-gray-800 transition-colors duration-300">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 flex items-center">
+                        <div class="rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 p-2 mr-3">
+                            <i class="fas fa-satellite-dish text-white text-lg"></i>
+                        </div>
+                        <span class="font-bold text-xl text-gray-800 dark:text-white">NetworkScope</span>
+
+                        <span id="wsStatus"
+                            class="ml-4 px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                            <i class="fas fa-plug mr-1"></i> Desconectado
+                        </span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+
+                    <button id="forceCheckBtn"
+                        class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-dark-100 transition-colors"
+                        title="Forzar chequeo manual">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+
+
+                    <button id="themeToggle"
+                        class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-dark-100 transition-colors">
+                        <i class="fas fa-moon" id="themeIcon"></i>
+                    </button>
+
+
+                    <div class="flex items-center space-x-3">
+                        <div class="text-right hidden sm:block">
+                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Admin</div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">Administrador</div>
+                        </div>
+                        <div
+                            class="h-9 w-9 rounded-full bg-gradient-to-r from-primary-500 to-primary-600 flex items-center justify-center text-white font-semibold">
+                            <span>A</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Monitor de Red MAN</h1>
+            <p class="text-gray-600 dark:text-gray-400">Sistema de monitoreo de dispositivos organizados por nodos <span
+                    id="lastUpdate" class="text-xs text-primary-500"></span></p>
+
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+                <div
+                    class="bg-white dark:bg-dark-200 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-gray-800">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Dispositivos</p>
+                            <p id="totalDevicesCount" class="text-2xl font-bold text-gray-900 dark:text-white mt-1">0
+                            </p>
+                        </div>
+                        <div class="rounded-lg bg-primary-50 dark:bg-primary-900/20 p-3">
+                            <i class="fas fa-server text-primary-500 text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    class="bg-white dark:bg-dark-200 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-gray-800">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">En Línea</p>
+                            <p id="onlineDevicesCount" class="text-2xl font-bold text-gray-900 dark:text-white mt-1">0
+                            </p>
+                        </div>
+                        <div class="rounded-lg bg-green-50 dark:bg-green-900/20 p-3">
+                            <i class="fas fa-check-circle text-green-500 text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    class="bg-white dark:bg-dark-200 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-gray-800">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Fuera de Línea</p>
+                            <p id="offlineDevicesCount" class="text-2xl font-bold text-gray-900 dark:text-white mt-1">0
+                            </p>
+                        </div>
+                        <div class="rounded-lg bg-red-50 dark:bg-red-900/20 p-3">
+                            <i class="fas fa-times-circle text-red-500 text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    class="bg-white dark:bg-dark-200 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-gray-800">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Nodos Registrados</p>
+                            <p id="activeNodesCount" class="text-2xl font-bold text-gray-900 dark:text-white mt-1">0</p>
+                        </div>
+                        <div class="rounded-lg bg-purple-50 dark:bg-purple-900/20 p-3">
+                            <i class="fas fa-sitemap text-purple-500 text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <div
+            class="bg-white dark:bg-dark-200 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4 md:mb-0">Dispositivos por Nodo
+                    </h2>
+                    <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-search text-gray-400"></i>
+                            </div>
+                            <input type="text" id="searchInput"
+                                class="search-focus py-2 pl-10 pr-4 block w-full rounded-lg border border-gray-300 dark:border-gray-700 dark:bg-dark-100 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                placeholder="Buscar dispositivos...">
+                        </div>
+
+                        <div class="flex space-x-2">
+                            <button id="addNodeBtn"
+                                class="inline-flex items-center justify-center px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-lg transition-colors">
+                                <i class="fas fa-sitemap mr-2"></i> Añadir Nodo
+                            </button>
+                            <button id="addDeviceBtn"
+                                class="inline-flex items-center justify-center px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+                                <i class="fas fa-plus mr-2"></i> Agregar Dispositivo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                    <thead class="bg-gray-50 dark:bg-dark-100">
+                        <tr>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Nodo / Dispositivo</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Dirección IP</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Estado</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Última Verificación</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="nodesTable"
+                        class="bg-white dark:bg-dark-200 divide-y divide-gray-200 dark:divide-gray-800">
+
+                        <tr>
+                            <td colspan="5" class="px-6 py-12 text-center">
+                                <div
+                                    class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mb-3">
+                                </div>
+                                <p class="text-gray-500 dark:text-gray-400">Conectando con el servidor de monitoreo...
+                                </p>
+                                <p class="text-sm text-gray-400 dark:text-gray-500 mt-1" id="connectionInfo"></p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-dark-100">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between">
+                    <p class="text-sm text-gray-700 dark:text-gray-300">
+                        Mostrando <span id="showingCount">0</span> nodos con <span id="deviceCount">0</span>
+                        dispositivos
+                    </p>
+                    <div class="flex items-center space-x-2 mt-2 md:mt-0">
+                        <span class="text-xs text-gray-500 dark:text-gray-400">Actualización automática cada 10s</span>
+                        <div id="refreshSpinner" class="hidden">
+                            <div class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-primary-500">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="addNodeModal" class="fixed inset-0 overflow-y-auto hidden z-50" aria-labelledby="modal-title" role="dialog"
+        aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"
+                onclick="closeAddNodeModal()"></div>
+
+            <div
+                class="inline-block align-bottom bg-white dark:bg-dark-200 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white dark:bg-dark-200 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <div class="sm:flex sm:items-start">
+                        <div
+                            class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-purple-100 dark:bg-purple-900/20 sm:mx-0 sm:h-10 sm:w-10">
+                            <i class="fas fa-sitemap text-purple-600 dark:text-purple-400"></i>
+                        </div>
+                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white" id="modal-title">
+                                Agregar Nuevo Nodo
+                            </h3>
+                            <div class="mt-4">
+                                <div class="space-y-4">
+                                    <div>
+                                        <label for="nodeName"
+                                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                            Nombre del Nodo
+                                        </label>
+                                        <input type="text" id="nodeName"
+                                            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 dark:bg-dark-100 dark:text-white"
+                                            placeholder="Ej. Planta baja">
+                                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                            Ingresa un nombre descriptivo para el nodo
+                                        </p>
+                                        <div id="nodeError" class="mt-1 text-sm text-red-600 dark:text-red-400 hidden">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-dark-100 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" onclick="addNewNode()"
+                        class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-purple-600 text-base font-medium text-white hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 sm:ml-3 sm:w-auto sm:text-sm">
+                        Agregar Nodo
+                    </button>
+                    <button type="button" onclick="closeAddNodeModal()"
+                        class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-dark-200 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="addDeviceModal" class="fixed inset-0 overflow-y-auto hidden z-50" aria-labelledby="modal-title"
+        role="dialog" aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"
+                onclick="closeAddDeviceModal()"></div>
+
+            <div
+                class="inline-block align-bottom bg-white dark:bg-dark-200 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white dark:bg-dark-200 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <div class="sm:flex sm:items-start">
+                        <div
+                            class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-primary-100 dark:bg-primary-900/20 sm:mx-0 sm:h-10 sm:w-10">
+                            <i class="fas fa-server text-primary-600 dark:text-primary-400"></i>
+                        </div>
+                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white" id="modal-title">
+                                Agregar Nuevo Dispositivo
+                            </h3>
+                            <div class="mt-4">
+                                <div class="space-y-4">
+                                    <div>
+                                        <label for="deviceName"
+                                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                            Nombre del Dispositivo
+                                        </label>
+                                        <input type="text" id="deviceName"
+                                            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-dark-100 dark:text-white"
+                                            placeholder="Ej: Servidor Web, Router Principal">
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label for="deviceIp"
+                                                class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                Dirección IP
+                                            </label>
+                                            <input type="text" id="deviceIp"
+                                                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-dark-100 dark:text-white"
+                                                placeholder="Ej: 192.168.1.1">
+                                        </div>
+                                        <div>
+                                            <label for="devicePort"
+                                                class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                Puerto
+                                            </label>
+                                            <input type="number" id="devicePort" min="1" max="65535"
+                                                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-dark-100 dark:text-white"
+                                                placeholder="Ej: 80">
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label for="deviceNode"
+                                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                            Nodo Asignado
+                                        </label>
+                                        <select id="deviceNode"
+                                            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-dark-100 dark:text-white">
+                                            <option value="">Seleccionar nodo</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label for="deviceDescription"
+                                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                            Descripción (Opcional)
+                                        </label>
+                                        <textarea id="deviceDescription" rows="2"
+                                            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-dark-100 dark:text-white"
+                                            placeholder="Descripción del dispositivo"></textarea>
+                                    </div>
+
+                                    <div id="deviceError" class="mt-1 text-sm text-red-600 dark:text-red-400 hidden">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-dark-100 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" onclick="addNewDevice()"
+                        class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary-600 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:ml-3 sm:w-auto sm:text-sm">
+                        Agregar Dispositivo
+                    </button>
+                    <button type="button" onclick="closeAddDeviceModal()"
+                        class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-dark-200 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                        Cancelar
+                    </button>
+                </div>
+
+                <div id="confirmModal" class="fixed inset-0 overflow-y-auto hidden z-50">
+                    <div
+                        class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+                            onclick="closeConfirmModal()"></div>
+                        <div
+                            class="inline-block align-bottom bg-white dark:bg-dark-200 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full">
+                            <div class="bg-white dark:bg-dark-200 px-4 pt-5 pb-4 sm:p-6">
+                                <div class="sm:flex sm:items-start">
+                                    <div
+                                        class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/20 sm:mx-0 sm:h-10 sm:w-10">
+                                        <i class="fas fa-exclamation-triangle text-red-600 dark:text-red-400"></i>
+                                    </div>
+                                    <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                                        <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white"
+                                            id="confirmModalTitle">
+                                            Confirmar eliminación
+                                        </h3>
+                                        <div class="mt-2">
+                                            <p class="text-sm text-gray-500 dark:text-gray-400"
+                                                id="confirmModalMessage"></p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-gray-50 dark:bg-dark-100 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                                <button type="button" onclick="confirmDelete()"
+                                    class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm">
+                                    Eliminar
+                                </button>
+                                <button type="button" onclick="closeConfirmModal()"
+                                    class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-dark-200 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+
+    <script src="public/assets/js/main.js"></script>
+</body>
+
+</html>
